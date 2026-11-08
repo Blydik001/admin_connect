@@ -6,11 +6,11 @@ import aiomysql
 from vkbottle.bot import Bot, Message
 from loguru import logger
 
-# Настройка логирования через loguru (чтобы избежать конфликта с vkbottle)
+# Настройка логирования через loguru (устраняет конфликт с vkbottle)
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
-# Глобальная переменная для пула БД, чтобы не инициализировать его в циклах постоянно
+# Глобальная переменная для пула БД (чтобы не пересоздавать подключения каждые 2 секунды)
 db_pool = None
 
 # --- НАСТРОЙКИ ---
@@ -37,7 +37,7 @@ async def database_polling_loop():
     global db_pool
     while True:
         try:
-            # Инициализируем пул, если он еще не создан
+            # Инициализируем пул подключений один раз при старте
             if db_pool is None:
                 db_pool = await aiomysql.create_pool(**DB_CONFIG)
 
@@ -65,12 +65,14 @@ async def database_polling_loop():
                         )
 
                         try:
+                            # Отправляем сообщение пользователю в VK
                             await bot.api.messages.send(
                                 user_id=int(vk_id),
                                 message=msg_text,
                                 random_id=0
                             )
                             
+                            # Записываем код в AloginSend и сбрасываем флаг AloginGET
                             await cur.execute(
                                 "UPDATE `accounts` SET `AloginSend` = %s, `AloginGET` = 0 WHERE `id` = %s",
                                 (auth_code, acc.get("id"))
@@ -83,17 +85,20 @@ async def database_polling_loop():
         except Exception as db_err:
             logger.error(f"Ошибка в цикле опроса БД: {db_err}")
         
+        # Задержка цикла опроса БД
         await asyncio.sleep(2)
 
 
 # --- ОБРАБОТКА КОМАНД VK BOT ---
 
+# Обработка команды "Начать"
 @bot.on.private_message(text=["Начать", "начать"])
 async def start_handler(message: Message):
     await message.answer(
         "Привет! Для привязки игрового аккаунта отправь мне 6-значный код, который ты получил в игре."
     )
 
+# Обработка отправки 6-значного кода привязки
 @bot.on.private_message()
 async def code_handler(message: Message):
     global db_pool
@@ -128,12 +133,10 @@ async def code_handler(message: Message):
 
 # --- ЗАПУСК БОТА ---
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    
-    # Добавляем фоновую задачу опроса БД в существующий event loop
-    loop.create_task(database_polling_loop())
-    
     logger.info("Бот успешно запущен!")
     
-    # Запускаем vkbottle
+    # Интегрируем фоновую задачу прямо в жизненный цикл vkbottle
+    bot.loop_wrapper.add_task(database_polling_loop())
+    
+    # Запускаем бесконечный цикл работы бота
     bot.run_forever()
