@@ -16,7 +16,7 @@ db_pool = None
 # --- НАСТРОЙКИ ---
 VK_TOKEN = "vk1.a.H1rjLQfSqO5dsC2zeIX-GqTK0OlcrEX55_8HZKIVNmXrhBVK7vzFnI7OOq-yvIJqWNm3MNe4PDW1yn2iVZO_cWNGV2R97nddUQc1Xdtmi9x0Ign1NMNztxO9QjuE0a4Al1ZEY1U-Uo09j5vAD12xRHyf50anP625Z2QHGfeO7jyZvohZh88YhAb-1d7ycJNpu7Ck8np6acFF1I42QSqhVQ"
 DB_CONFIG = {
-    "host": "80.242.59.112",  # Ваш удаленный хост базы данных
+    "host": "80.242.59.112",  # Удаленный хост базы данных
     "user": "gs330867",
     "password": "HeZ5icJZQtXW",
     "db": "gs330867",
@@ -27,10 +27,10 @@ SERVER_NAME = "TEST SERVER"
 
 bot = Bot(token=VK_TOKEN)
 
-# Функция для генерации случайного кода подтверждения (XYZW)
+# Функция для генерации случайного кода подтверждения (ТОЛЬКО ЦИФРЫ)
 def generate_login_code(length=4):
-    letters_and_digits = string.ascii_uppercase + string.digits
-    return ''.join(random.choice(letters_and_digits) for _ in range(length))
+    digits = string.digits  # Используем только цифры "0123456789"
+    return ''.join(random.choice(digits) for _ in range(length))
 
 # --- ФОНОВАЯ ФУНКЦИЯ ЦИКЛИЧЕСКОЙ ПРОВЕРКИ БД ---
 async def database_polling_loop():
@@ -43,7 +43,7 @@ async def database_polling_loop():
 
             async with db_pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
-                    # Ищем аккаунты, требующие генерации кода для авторизации (Регистр AloginGET исправлен!)
+                    # Ищем аккаунты, требующие генерации кода для авторизации
                     await cur.execute("SELECT * FROM `accounts` WHERE `AloginGET` = 1")
                     accounts = await cur.fetchall()
 
@@ -53,8 +53,8 @@ async def database_polling_loop():
                             continue
 
                         last_ip = acc.get("AloginIP", "0.0.0.0") 
-                        conn_ip = acc.get("AloginCIP", "0.0.0.0") # Исправлено на AloginCIP из вашего списка
-                        nickname = acc.get("Name")
+                        conn_ip = acc.get("AloginCIP", "0.0.0.0") 
+                        nickname = acc.get("name")  # Имя столбца изменено на "name"
 
                         auth_code = generate_login_code(4)
 
@@ -72,7 +72,7 @@ async def database_polling_loop():
                                 random_id=0
                             )
                             
-                            # Записываем код в AloginSend и сбрасываем флаг AloginGET (Регистр исправлен!)
+                            # Записываем код в AloginSend и сбрасываем флаг AloginGET
                             await cur.execute(
                                 "UPDATE `accounts` SET `AloginSend` = %s, `AloginGET` = 0 WHERE `id` = %s",
                                 (auth_code, acc.get("id"))
@@ -111,14 +111,14 @@ async def code_handler(message: Message):
 
             async with db_pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
-                    # Ищем аккаунт с таким AloginCode (Регистр исправлен!)
+                    # Ищем аккаунт с таким AloginCode
                     await cur.execute("SELECT * FROM `accounts` WHERE `AloginCode` = %s", (text,))
                     acc = await cur.fetchone()
 
                     if acc:
-                        nickname = acc.get("Name")
+                        nickname = acc.get("name")  # Имя столбца изменено на "name"
                         
-                        # Обновляем данные аккаунта (Регистр исправлен!)
+                        # Обновляем данные аккаунта
                         await cur.execute(
                             "UPDATE `accounts` SET `AloginVK` = %s, `AloginCode` = 0 WHERE `id` = %s",
                             (message.from_id, acc.get("id"))
