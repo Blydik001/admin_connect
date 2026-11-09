@@ -27,10 +27,11 @@ SERVER_NAME = "TEST SERVER"
 
 bot = Bot(token=VK_TOKEN)
 
-# Функция для генерации случайного кода подтверждения (ТОЛЬКО ЦИФРЫ)
+# Функция для генерации случайного цифрового кода (Первая цифра строго от 1 до 9)
 def generate_login_code(length=4):
-    digits = string.digits  # Используем только цифры "0123456789"
-    return ''.join(random.choice(digits) for _ in range(length))
+    first_digit = random.choice("123456789")  # Исключаем 0 для первой цифры
+    other_digits = ''.join(random.choice(string.digits) for _ in range(length - 1))
+    return first_digit + other_digits
 
 # --- ФОНОВАЯ ФУНКЦИЯ ЦИКЛИЧЕСКОЙ ПРОВЕРКИ БД ---
 async def database_polling_loop():
@@ -111,7 +112,7 @@ async def code_handler(message: Message):
 
             async with db_pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
-                    # Ищем аккаунт с таким AloginCode
+                    # Ищем аккаунты с таким AloginCode
                     await cur.execute("SELECT * FROM `accounts` WHERE `AloginCode` = %s", (text,))
                     acc = await cur.fetchone()
 
