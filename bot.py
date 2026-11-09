@@ -1,7 +1,5 @@
 import asyncio
 import sys
-import random
-import string
 import aiomysql
 from vkbottle.bot import Bot, Message
 from loguru import logger
@@ -27,12 +25,6 @@ SERVER_NAME = "TEST SERVER"
 
 bot = Bot(token=VK_TOKEN)
 
-# Функция для генерации случайного цифрового кода (Первая цифра строго от 1 до 9)
-def generate_login_code(length=4):
-    first_digit = random.choice("123456789")  # Исключаем 0 для первой цифры
-    other_digits = ''.join(random.choice(string.digits) for _ in range(length - 1))
-    return first_digit + other_digits
-
 # --- ФОНОВАЯ ФУНКЦИЯ ЦИКЛИЧЕСКОЙ ПРОВЕРКИ БД ---
 async def database_polling_loop():
     global db_pool
@@ -44,7 +36,7 @@ async def database_polling_loop():
 
             async with db_pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
-                    # Ищем аккаунты, требующие генерации кода для авторизации
+                    # Ищем аккаунты, требующие авторизации через VK
                     await cur.execute("SELECT * FROM `accounts` WHERE `AloginGET` = 1")
                     accounts = await cur.fetchall()
 
@@ -55,9 +47,10 @@ async def database_polling_loop():
 
                         last_ip = acc.get("AloginIP", "0.0.0.0") 
                         conn_ip = acc.get("AloginCIP", "0.0.0.0") 
-                        nickname = acc.get("name")  # Имя столбца изменено на "name"
-
-                        auth_code = generate_login_code(4)
+                        nickname = acc.get("name") 
+                        
+                        # Беру готовый код из столбца AloginSend в базе данных
+                        auth_code = acc.get("AloginSend") 
 
                         msg_text = (
                             f"Last IP: \"{last_ip}\" Connect IP: \"{conn_ip}\" "
@@ -73,12 +66,12 @@ async def database_polling_loop():
                                 random_id=0
                             )
                             
-                            # Записываем код в AloginSend и сбрасываем флаг AloginGET
+                            # Только сбрасываем флаг AloginGET (код в AloginSend не перезаписываем)
                             await cur.execute(
-                                "UPDATE `accounts` SET `AloginSend` = %s, `AloginGET` = 0 WHERE `id` = %s",
-                                (auth_code, acc.get("id"))
+                                "UPDATE `accounts` SET `AloginGET` = 0 WHERE `id` = %s",
+                                (acc.get("id"),)
                             )
-                            logger.info(f"Код авторизации отправлен игроку {nickname} (VK: {vk_id})")
+                            logger.info(f"Код авторизации {auth_code} успешно передан из БД игроку {nickname} (VK: {vk_id})")
 
                         except Exception as vk_err:
                             logger.error(f"Не удалось отправить VK сообщение для {nickname}: {vk_err}")
@@ -117,7 +110,7 @@ async def code_handler(message: Message):
                     acc = await cur.fetchone()
 
                     if acc:
-                        nickname = acc.get("name")  # Имя столбца изменено на "name"
+                        nickname = acc.get("name")
                         
                         # Обновляем данные аккаунта
                         await cur.execute(
